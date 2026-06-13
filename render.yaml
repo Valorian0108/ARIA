@@ -10,6 +10,7 @@ services:
       PORT=3000 BASE_PATH=/ pnpm --filter @workspace/web run build &&
       pnpm --filter @workspace/api-server run build
     startCommand: node artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
     envVars:
       - key: NODE_ENV
         value: production
