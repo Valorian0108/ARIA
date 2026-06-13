@@ -99,6 +99,26 @@ export async function runAgentCycle(): Promise<void> {
       price: signals.price,
     });
     logger.info({ action: decision.action, confidence: decision.confidence }, "Decision generated");
+    // Signal-based heuristic override — if AI returns HOLD but signals align clearly, commit
+    if (decision.action === "HOLD") {
+      const sentiment = signals.sentimentScore;
+      const funding  = signals.fundingRate;
+      const priceChg = signals.priceChange24h;
+      const bullish  = sentiment > 0.60 && priceChg > 0.3 && funding < 0.04;
+      const bearish  = sentiment < 0.40 && priceChg < -0.3 && funding > 0.005;
+      if (bullish) {
+        decision.action     = "BUY";
+        decision.confidence = Math.max(decision.confidence, 73);
+        decision.reasoning  = `Heuristic override: sentiment at ${(sentiment * 100).toFixed(0)}% bullish with +${priceChg.toFixed(2)}% 24h move and controlled funding (${funding.toFixed(4)}%). Mean reversion buy signal confirmed.`;
+        logger.info({ sentiment, priceChg, funding }, "Heuristic override → BUY");
+      } else if (bearish) {
+        decision.action     = "SELL";
+        decision.confidence = Math.max(decision.confidence, 73);
+        decision.reasoning  = `Heuristic override: sentiment at ${(sentiment * 100).toFixed(0)}% bearish with ${priceChg.toFixed(2)}% 24h move and elevated funding (${funding.toFixed(4)}%). Reducing simulated exposure.`;
+        logger.info({ sentiment, priceChg, funding }, "Heuristic override → SELL");
+      }
+    }
+
 
     // 5. Compute sim P&L
     let pnlPercent: string | null = null;
