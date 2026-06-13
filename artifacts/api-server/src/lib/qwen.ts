@@ -106,12 +106,12 @@ Current state:
 - Key signals: ${JSON.stringify(params.signals, null, 0)}
 
 Strategy rules:
-- TRENDING regime → Momentum Breakout: favor BUY on bullish breakouts, SELL on breakdown
-- RANGING regime → Mean Reversion: BUY near support, SELL near resistance, HOLD in midrange
-- VOLATILE regime → Volatility Breakout: HOLD mostly, only trade confirmed breakouts
-- CRISIS regime → Capital Preservation: HOLD or SELL to reduce exposure
+- TRENDING regime → Momentum Breakout: BUY on bullish momentum (sentiment > 0.55, positive MACD), SELL on bearish breakdown, HOLD only if direction is genuinely unclear
+- RANGING regime → Mean Reversion: BUY if sentiment < 0.45 or funding rate is negative (oversold), SELL if sentiment > 0.6 or funding rate is elevated (overbought), HOLD only if ALL signals are flat and mixed — commit to BUY or SELL when confidence ≥ 75%
+- VOLATILE regime → Volatility Breakout: BUY or SELL on confirmed directional break (priceChange > 2% with sentiment alignment), HOLD only if direction is truly unresolved
+- CRISIS regime → Capital Preservation: SELL to reduce exposure, HOLD only if already flat
 
-Generate a BTC/USDT trading decision. Be specific about why. Use actual signal values in reasoning.
+Important: Bias toward action. HOLD is only correct when signals are genuinely contradictory. If confidence is ≥ 75% and signals lean in one direction, commit to BUY or SELL. Cite specific signal values in your reasoning.
 
 Return ONLY valid JSON, no markdown:
 {"action": "BUY|SELL|HOLD", "reasoning": "2-3 sentence plain English explanation citing specific signals", "confidence": 60-95, "strategy": "${params.strategy}"}`;
@@ -120,7 +120,7 @@ Return ONLY valid JSON, no markdown:
     const response = await client.chat.completions.create({
       model: MODEL,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
+      temperature: 0.6,
       max_tokens: 200,
     });
 
@@ -143,3 +143,4 @@ Return ONLY valid JSON, no markdown:
     };
   }
 }
+
