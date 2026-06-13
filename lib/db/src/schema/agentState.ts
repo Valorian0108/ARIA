@@ -14,6 +14,7 @@ export const agentStateTable = pgTable("agent_state", {
   maxDrawdown: numeric("max_drawdown", { precision: 10, scale: 4 }).notNull().default("0"),
   tradeCount: integer("trade_count").notNull().default(0),
   winCount: integer("win_count").notNull().default(0),
+  currentPair: text("current_pair").notNull().default("BTCUSDT"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

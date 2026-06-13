@@ -7,7 +7,7 @@ import { computePerformance } from "./performance";
 import { logger } from "../lib/logger";
 
 const AGENT_STATE_ID = 1;
-const LOOP_INTERVAL_MS = 45_000; // 45 seconds
+const LOOP_INTERVAL_MS = 45_000;
 
 let running = false;
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -27,9 +27,18 @@ export async function initAgentState(): Promise<void> {
       strategy: "Mean Reversion",
       signals: {},
       lastAction: "HOLD",
+      currentPair: "BTCUSDT",
     });
     logger.info("Agent state initialized");
   }
+}
+
+export async function setActivePair(pair: string): Promise<void> {
+  await db
+    .update(agentStateTable)
+    .set({ currentPair: pair, updatedAt: new Date() })
+    .where(eq(agentStateTable.id, AGENT_STATE_ID));
+  logger.info({ pair }, "Active pair updated");
 }
 
 export async function runAgentCycle(): Promise<void> {
@@ -42,9 +51,19 @@ export async function runAgentCycle(): Promise<void> {
   try {
     logger.info("Starting agent cycle");
 
+    // Read active pair
+    const [currentState] = await db
+      .select()
+      .from(agentStateTable)
+      .where(eq(agentStateTable.id, AGENT_STATE_ID))
+      .limit(1);
+
+    const pair = currentState?.currentPair ?? "BTCUSDT";
+    const lastAction = currentState?.lastAction ?? "HOLD";
+
     // 1. Fetch market signals
-    const signals = await fetchSignals("BTCUSDT");
-    logger.info({ price: signals.price, volatility: signals.volatility }, "Signals fetched");
+    const signals = await fetchSignals(pair);
+    logger.info({ pair, price: signals.price, volatility: signals.volatility }, "Signals fetched");
 
     // 2. Classify regime
     const regimeResult = await classifyRegime({
@@ -62,16 +81,7 @@ export async function runAgentCycle(): Promise<void> {
     // 3. Get strategy for regime
     const strategy = getStrategy(regimeResult.regime);
 
-    // 4. Get current state for context
-    const [currentState] = await db
-      .select()
-      .from(agentStateTable)
-      .where(eq(agentStateTable.id, AGENT_STATE_ID))
-      .limit(1);
-
-    const lastAction = currentState?.lastAction ?? "HOLD";
-
-    // 5. Generate decision
+    // 4. Generate decision
     const decision = await generateDecision({
       regime: regimeResult.regime,
       confidence: regimeResult.confidence,
@@ -90,33 +100,35 @@ export async function runAgentCycle(): Promise<void> {
     });
     logger.info({ action: decision.action, confidence: decision.confidence }, "Decision generated");
 
-    // 6. Compute sim P&L (simplified: random walk seeded by signal quality)
+    // 5. Compute sim P&L
     let pnlPercent: string | null = null;
     if (decision.action !== "HOLD" && signals.price > 0) {
-      // Simulate: entry now, projected +/- based on signal alignment
-      const signalStrength = (decision.confidence - 60) / 35; // 0 to 1
+      const signalStrength = (decision.confidence - 60) / 35;
       const directionMultiplier = decision.action === "BUY" ? 1 : -1;
       const base = signalStrength * directionMultiplier * (Math.random() * 2 + 0.5);
       pnlPercent = (Math.round(base * 100) / 100).toFixed(4);
     }
 
-    // 7. Persist decision
+    // Display pair label (e.g. BTC/USDT)
+    const pairLabel = pair.replace("USDT", "/USDT");
+
+    // 6. Persist decision
     await db.insert(decisionsTable).values({
       regime: regimeResult.regime,
       confidence: regimeResult.confidence,
       strategy: decision.strategy,
       action: decision.action,
-      pair: "BTC/USDT",
+      pair: pairLabel,
       reasoning: decision.reasoning,
       entryPrice: signals.price > 0 ? signals.price.toFixed(2) : null,
       pnlPercent,
       signals: signals as unknown as Record<string, unknown>,
     });
 
-    // 8. Compute performance
+    // 7. Compute performance
     const perf = await computePerformance();
 
-    // 9. Update agent state
+    // 8. Update agent state
     await db
       .update(agentStateTable)
       .set({
@@ -135,7 +147,7 @@ export async function runAgentCycle(): Promise<void> {
       })
       .where(eq(agentStateTable.id, AGENT_STATE_ID));
 
-    logger.info({ regime: regimeResult.regime, action: decision.action }, "Agent cycle complete");
+    logger.info({ pair, regime: regimeResult.regime, action: decision.action }, "Agent cycle complete");
   } catch (err) {
     logger.error({ err }, "Agent cycle failed");
   } finally {
@@ -145,10 +157,7 @@ export async function runAgentCycle(): Promise<void> {
 
 export function startAgentLoop(): void {
   logger.info({ intervalMs: LOOP_INTERVAL_MS }, "Starting agent loop");
-
-  // Run immediately on start
   void runAgentCycle();
-
   intervalHandle = setInterval(() => {
     void runAgentCycle();
   }, LOOP_INTERVAL_MS);

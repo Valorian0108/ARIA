@@ -1,11 +1,37 @@
 import { Router, type IRouter } from "express";
 import { db, decisionsTable, agentStateTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
-import { runAgentCycle } from "../agent/loop";
+import { runAgentCycle, setActivePair } from "../agent/loop";
 
 const router: IRouter = Router();
 
-// GET /api/state — full agent state (regime, signals, strategy, performance)
+const AVAILABLE_PAIRS = [
+  { symbol: "BTCUSDT", label: "BTC/USDT", name: "Bitcoin" },
+  { symbol: "ETHUSDT", label: "ETH/USDT", name: "Ethereum" },
+  { symbol: "SOLUSDT", label: "SOL/USDT", name: "Solana" },
+  { symbol: "BNBUSDT", label: "BNB/USDT", name: "BNB" },
+  { symbol: "XRPUSDT", label: "XRP/USDT", name: "Ripple" },
+];
+
+// GET /api/pairs — list tradeable pairs
+router.get("/pairs", (_req, res): void => {
+  res.json(AVAILABLE_PAIRS);
+});
+
+// POST /api/pair — switch the active pair
+router.post("/pair", async (req, res): Promise<void> => {
+  const { pair } = req.body as { pair?: string };
+  const valid = AVAILABLE_PAIRS.find((p) => p.symbol === pair);
+  if (!valid) {
+    res.status(400).json({ error: `Invalid pair. Choose from: ${AVAILABLE_PAIRS.map((p) => p.symbol).join(", ")}` });
+    return;
+  }
+  await setActivePair(valid.symbol);
+  void runAgentCycle();
+  res.json({ pair: valid.symbol, label: valid.label, queued: true });
+});
+
+// GET /api/state — full agent state
 router.get("/state", async (req, res): Promise<void> => {
   const [state] = await db
     .select()
@@ -20,6 +46,7 @@ router.get("/state", async (req, res): Promise<void> => {
       strategy: "Mean Reversion",
       signals: {},
       lastAction: "HOLD",
+      currentPair: "BTCUSDT",
       totalPnlPercent: 0,
       sharpeRatio: 0,
       winRate: 0,
@@ -37,6 +64,7 @@ router.get("/state", async (req, res): Promise<void> => {
     strategy: state.strategy,
     signals: state.signals,
     lastAction: state.lastAction,
+    currentPair: state.currentPair ?? "BTCUSDT",
     totalPnlPercent: parseFloat(String(state.totalPnlPercent ?? "0")),
     sharpeRatio: parseFloat(String(state.sharpeRatio ?? "0")),
     winRate: parseFloat(String(state.winRate ?? "0")),
@@ -47,7 +75,7 @@ router.get("/state", async (req, res): Promise<void> => {
   });
 });
 
-// GET /api/decisions — last N decisions with full reasoning
+// GET /api/decisions — last N decisions
 router.get("/decisions", async (req, res): Promise<void> => {
   const limit = Math.min(Number(req.query["limit"] ?? 20), 50);
   const decisions = await db
@@ -73,10 +101,9 @@ router.get("/decisions", async (req, res): Promise<void> => {
   );
 });
 
-// POST /api/trigger — manually trigger an agent cycle (for demo)
+// POST /api/trigger — manually trigger a cycle
 router.post("/trigger", async (req, res): Promise<void> => {
   req.log.info("Manual agent cycle triggered");
-  // Fire and forget — returns immediately
   void runAgentCycle();
   res.json({ queued: true, message: "Agent cycle triggered" });
 });
