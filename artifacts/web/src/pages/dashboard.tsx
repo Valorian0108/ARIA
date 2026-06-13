@@ -306,16 +306,16 @@ export default function Dashboard() {
               {pairs.map((p) => (
                 <button
                   key={p.symbol}
-                  onMouseDown={(e) => { e.stopPropagation(); void switchPair(p.symbol); }}
-                  className={`w-full px-4 py-3 text-left text-xs flex items-center justify-between transition-all ${
+                  onClick={() => void switchPair(p.symbol)}
+                  style={{ ...fontMono, cursor: "pointer" }}
+                  className={`w-full px-4 py-3 text-left text-xs flex items-center justify-between border-l-2 transition-all duration-100 ${
                     p.symbol === currentPair
-                      ? "text-violet-300 bg-violet-900/20 border-l-2 border-violet-500"
-                      : "text-gray-400 hover:bg-violet-900/15 hover:text-gray-200 border-l-2 border-transparent"
+                      ? "text-white bg-violet-600/30 border-violet-400"
+                      : "text-gray-300 bg-transparent hover:bg-violet-500/25 hover:text-white border-transparent hover:border-violet-400"
                   }`}
-                  style={fontMono}
                 >
                   <span className="font-semibold">{p.label}</span>
-                  <span className="text-[10px] text-gray-600">{p.name}</span>
+                  <span className="text-[10px] text-gray-500">{p.name}</span>
                 </button>
               ))}
             </div>
