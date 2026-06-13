@@ -124,12 +124,32 @@ function PnlChart({ decisions }: { decisions: Decision[] }) {
 }
 
 function Tooltip({ text }: { text: string }) {
-  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  const show = () => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (rect) {
+      const left = Math.min(rect.left, window.innerWidth - 220);
+      const top  = rect.top > 120 ? rect.top - 8 : rect.bottom + 8;
+      setPos({ top, left });
+    }
+  };
+
   return (
-    <span className="relative inline-flex items-center" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
-      <Info size={10} className="text-gray-700 hover:text-gray-500 cursor-help ml-1 transition-colors" />
-      {show && (
-        <span className="absolute bottom-5 left-0 z-50 w-52 text-[10px] text-gray-300 bg-[#12121E] border border-gray-700/60 rounded-lg p-2.5 leading-relaxed shadow-xl">
+    <span
+      ref={ref}
+      className="inline-flex items-center"
+      onMouseEnter={show}
+      onMouseLeave={() => setPos(null)}
+      onClick={show}
+    >
+      <Info size={11} className="text-gray-600 hover:text-gray-400 cursor-help ml-1 transition-colors" />
+      {pos && (
+        <span
+          className="fixed z-[9999] w-52 text-[10px] text-gray-300 bg-[#12121E] border border-gray-700/60 rounded-lg p-2.5 leading-relaxed shadow-2xl pointer-events-none -translate-y-full"
+          style={{ top: pos.top, left: pos.left }}
+        >
           {text}
         </span>
       )}
@@ -149,8 +169,21 @@ export default function Dashboard() {
   const [pendingPair, setPendingPair] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const [dropdownRect, setDropdownRect] = useState<{ top: number; right: number } | null>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number } | null>(null);
   const pairBtnRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click (no backdrop overlay that intercepts pointer events)
+  useEffect(() => {
+    if (!pairOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!pairBtnRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
+        setPairOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [pairOpen]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -253,7 +286,7 @@ export default function Dashboard() {
               ref={pairBtnRef}
               onClick={() => {
                 const rect = pairBtnRef.current?.getBoundingClientRect();
-                if (rect) setDropdownRect({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                if (rect) setDropdownRect({ top: rect.bottom + 4, left: rect.right - 192 });
                 setPairOpen((o) => !o);
               }}
               className="flex items-center gap-2 px-3 py-1.5 text-xs bg-[#0D0D18] border border-gray-700/60 rounded-lg text-gray-300 hover:border-violet-600/50 transition-all"
@@ -265,29 +298,27 @@ export default function Dashboard() {
             </button>
           </div>
           {pairOpen && dropdownRect && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setPairOpen(false)} />
-              <div
-                className="fixed z-50 w-48 bg-[#0E0E1A] border border-gray-700/60 rounded-xl overflow-hidden shadow-2xl"
-                style={{ top: dropdownRect.top, right: dropdownRect.right }}
-              >
-                {pairs.map((p) => (
-                  <button
-                    key={p.symbol}
-                    onClick={() => void switchPair(p.symbol)}
-                    className={`w-full px-4 py-3 text-left text-xs flex items-center justify-between transition-colors active:bg-violet-900/30 ${
-                      p.symbol === currentPair
-                        ? "text-violet-300 bg-violet-900/10"
-                        : "text-gray-400 hover:bg-violet-900/20 hover:text-gray-200"
-                    }`}
-                    style={fontMono}
-                  >
-                    <span className="font-semibold">{p.label}</span>
-                    <span className="text-[10px] text-gray-600">{p.name}</span>
-                  </button>
-                ))}
-              </div>
-            </>
+            <div
+              ref={dropdownRef}
+              className="fixed z-[9998] w-48 bg-[#0E0E1A] border border-violet-900/40 rounded-xl overflow-hidden shadow-2xl"
+              style={{ top: dropdownRect.top, left: Math.max(8, dropdownRect.left) }}
+            >
+              {pairs.map((p) => (
+                <button
+                  key={p.symbol}
+                  onMouseDown={(e) => { e.stopPropagation(); void switchPair(p.symbol); }}
+                  className={`w-full px-4 py-3 text-left text-xs flex items-center justify-between transition-all ${
+                    p.symbol === currentPair
+                      ? "text-violet-300 bg-violet-900/20 border-l-2 border-violet-500"
+                      : "text-gray-400 hover:bg-violet-900/15 hover:text-gray-200 border-l-2 border-transparent"
+                  }`}
+                  style={fontMono}
+                >
+                  <span className="font-semibold">{p.label}</span>
+                  <span className="text-[10px] text-gray-600">{p.name}</span>
+                </button>
+              ))}
+            </div>
           )}
 
           <button onClick={() => void handleTrigger()} disabled={triggering}
