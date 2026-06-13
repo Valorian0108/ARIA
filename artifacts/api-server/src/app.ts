@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { initAgentState, startAgentLoop } from "./agent/loop";
 
 const app: Express = express();
 
@@ -30,5 +31,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// Bootstrap agent on startup
+void (async () => {
+  try {
+    await initAgentState();
+    startAgentLoop();
+  } catch (err) {
+    logger.error({ err }, "Failed to start agent loop");
+  }
+})();
 
 export default app;
