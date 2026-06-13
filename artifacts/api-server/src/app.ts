@@ -46,7 +46,8 @@ if (process.env.NODE_ENV === "production") {
   const staticDir = path.resolve(__dirname, "../../../artifacts/web/dist/public");
   if (existsSync(staticDir)) {
     app.use(express.static(staticDir));
-    app.get("*", (req, res) => {
+    // Express 5 requires named wildcard params — bare "*" is not valid
+    app.get(/(.*)/, (req, res) => {
       if (req.path.startsWith("/api")) {
         res.status(404).json({ error: "Not found" });
         return;
