@@ -169,17 +169,14 @@ export default function Dashboard() {
   const [pendingPair, setPendingPair] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number } | null>(null);
-  const pairBtnRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const pairWrapRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click (no backdrop overlay that intercepts pointer events)
+  // Close dropdown when clicking outside
   useEffect(() => {
     if (!pairOpen) return;
     const handler = (e: MouseEvent) => {
-      if (!pairBtnRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
-        setPairOpen(false);
-      }
+      if (!pairWrapRef.current?.contains(e.target as Node)) setPairOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -259,7 +256,7 @@ export default function Dashboard() {
   const hasTradeHistory = (state?.tradeCount ?? 0) > 0;
 
   return (
-    <div className="min-h-screen text-gray-300 p-4 md:p-6 flex flex-col gap-5 relative overflow-hidden" style={{ backgroundColor: "#08080E" }}>
+    <div className="min-h-screen text-gray-300 p-4 md:p-6 flex flex-col gap-5 relative overflow-x-hidden" style={{ backgroundColor: "#08080E" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');`}</style>
       <div className={`absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full blur-[120px] pointer-events-none transition-colors duration-1000 ${regime === "TRENDING" ? "bg-violet-900/10" : regime === "RANGING" ? "bg-blue-900/8" : regime === "VOLATILE" ? "bg-amber-900/8" : "bg-red-900/8"}`} />
 
@@ -280,46 +277,38 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Pair selector dropdown — fixed position to escape overflow-hidden */}
-          <div className="relative">
+          {/* Pair selector — absolute inside relative wrapper, no overflow clipping */}
+          <div ref={pairWrapRef} className="relative">
             <button
-              ref={pairBtnRef}
-              onClick={() => {
-                const rect = pairBtnRef.current?.getBoundingClientRect();
-                if (rect) setDropdownRect({ top: rect.bottom + 4, left: rect.right - 192 });
-                setPairOpen((o) => !o);
-              }}
+              onClick={() => setPairOpen((o) => !o)}
+              style={{ ...fontMono, cursor: "pointer" }}
               className="flex items-center gap-2 px-3 py-1.5 text-xs bg-[#0D0D18] border border-gray-700/60 rounded-lg text-gray-300 hover:border-violet-600/50 transition-all"
-              style={fontMono}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${switching ? "bg-amber-400 animate-pulse" : "bg-violet-400"}`} />
               {switching ? "SWITCHING…" : pairLabel}
               <ChevronDown size={12} className={`transition-transform duration-200 ${pairOpen ? "rotate-180" : ""}`} />
             </button>
+            {pairOpen && (
+              <div
+                ref={dropdownRef}
+                className="absolute right-0 top-full mt-1 w-48 z-50 rounded-xl shadow-2xl border border-violet-900/50"
+                style={{ background: "#0E0E1A" }}
+              >
+                {pairs.map((p) => (
+                  <button
+                    key={p.symbol}
+                    onClick={() => void switchPair(p.symbol)}
+                    style={{ ...fontMono, cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", fontSize: "12px", textAlign: "left", borderLeft: `2px solid ${p.symbol === currentPair ? "#a78bfa" : "transparent"}`, background: p.symbol === currentPair ? "rgba(139,92,246,0.2)" : "transparent", color: p.symbol === currentPair ? "#fff" : "#d1d5db", transition: "background 0.1s" }}
+                    onMouseEnter={e => { if (p.symbol !== currentPair) (e.currentTarget as HTMLButtonElement).style.background = "rgba(139,92,246,0.15)"; }}
+                    onMouseLeave={e => { if (p.symbol !== currentPair) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{p.label}</span>
+                    <span style={{ fontSize: "10px", color: "#6b7280" }}>{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          {pairOpen && dropdownRect && (
-            <div
-              ref={dropdownRef}
-              className="fixed z-[9998] w-48 bg-[#0E0E1A] border border-violet-900/40 rounded-xl overflow-hidden shadow-2xl"
-              style={{ top: dropdownRect.top, left: Math.max(8, dropdownRect.left) }}
-            >
-              {pairs.map((p) => (
-                <button
-                  key={p.symbol}
-                  onClick={() => void switchPair(p.symbol)}
-                  style={{ ...fontMono, cursor: "pointer" }}
-                  className={`w-full px-4 py-3 text-left text-xs flex items-center justify-between border-l-2 transition-all duration-100 ${
-                    p.symbol === currentPair
-                      ? "text-white bg-violet-600/30 border-violet-400"
-                      : "text-gray-300 bg-transparent hover:bg-violet-500/25 hover:text-white border-transparent hover:border-violet-400"
-                  }`}
-                >
-                  <span className="font-semibold">{p.label}</span>
-                  <span className="text-[10px] text-gray-500">{p.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
 
           <button onClick={() => void handleTrigger()} disabled={triggering}
             className="flex items-center gap-2 px-3 py-1.5 text-xs bg-violet-900/30 border border-violet-700/40 rounded-lg text-violet-300 hover:bg-violet-900/50 transition-all disabled:opacity-50"
