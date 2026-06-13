@@ -69,6 +69,22 @@ export async function fetchQuickPrice(pair = "BTCUSDT"): Promise<{ price: number
   }
 }
 
+export async function fetchCandles(pair = "BTCUSDT", limit = 24): Promise<{ ts: number; open: number; high: number; low: number; close: number; volume: number }[]> {
+  try {
+    const raw = await fetchJson(`${BITGET_BASE}/api/v2/spot/market/candles?symbol=${pair}&granularity=1h&limit=${limit}`) as { data?: string[][] };
+    return (raw.data ?? []).map((c) => ({
+      ts:     Number(c[0]),
+      open:   parseFloat(c[1] ?? "0"),
+      high:   parseFloat(c[2] ?? "0"),
+      low:    parseFloat(c[3] ?? "0"),
+      close:  parseFloat(c[4] ?? "0"),
+      volume: parseFloat(c[5] ?? "0"),
+    })).reverse();
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchSignals(pair = "BTCUSDT"): Promise<SignalData> {
   try {
     const [candleRes, tickerRes, fundingRes] = await Promise.allSettled([

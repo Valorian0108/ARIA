@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, decisionsTable, agentStateTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { runAgentCycle, setActivePair } from "../agent/loop";
-import { fetchQuickPrice } from "../lib/bitget";
+import { fetchQuickPrice, fetchCandles } from "../lib/bitget";
 
 const router: IRouter = Router();
 
@@ -108,6 +108,14 @@ router.get("/decisions", async (req, res): Promise<void> => {
       createdAt: d.createdAt.toISOString(),
     }))
   );
+});
+
+// GET /api/candles — last N hourly candles for a pair
+router.get("/candles", async (req, res): Promise<void> => {
+  const pair  = (req.query["pair"]  as string) || "BTCUSDT";
+  const limit = Math.min(Number(req.query["limit"] ?? 24), 48);
+  const candles = await fetchCandles(pair, limit);
+  res.json(candles);
 });
 
 // POST /api/trigger — manually trigger a cycle

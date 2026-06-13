@@ -1,6 +1,105 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Activity, BarChart2, TrendingUp, Zap, RefreshCw, Shield, Target, AlertTriangle, ChevronDown, Info } from "lucide-react";
 
+interface Candle { ts: number; open: number; high: number; low: number; close: number; volume: number; }
+
+function PriceChart({ candles, decisions, pair }: { candles: Candle[]; decisions: Decision[]; pair: string }) {
+  const W = 800; const H = 130; const PAD = { t: 12, r: 8, b: 28, l: 58 };
+  if (candles.length < 2) {
+    return <div className="flex items-center justify-center h-[130px] text-[10px] text-gray-700" style={{ fontFamily: "'JetBrains Mono', monospace" }}>Loading chart…</div>;
+  }
+  const closes = candles.map(c => c.close);
+  const hi = Math.max(...candles.map(c => c.high));
+  const lo = Math.min(...candles.map(c => c.low));
+  const pad = (hi - lo) * 0.08;
+  const yMax = hi + pad; const yMin = lo - pad;
+  const cW = W - PAD.l - PAD.r;
+  const cH = H - PAD.t - PAD.b;
+  const xOf = (i: number) => PAD.l + (i / (candles.length - 1)) * cW;
+  const yOf = (v: number) => PAD.t + cH - ((v - yMin) / (yMax - yMin)) * cH;
+
+  const linePts = candles.map((c, i) => `${xOf(i)},${yOf(c.close)}`).join(" ");
+  const areaPath = `M${PAD.l},${PAD.t + cH} L${candles.map((c, i) => `${xOf(i)},${yOf(c.close)}`).join(" L")} L${PAD.l + cW},${PAD.t + cH} Z`;
+  const priceUp = closes[closes.length - 1]! >= closes[0]!;
+  const strokeColor = priceUp ? "#8b5cf6" : "#ef4444";
+  const gradId = `cg-${pair}`;
+
+  // Y-axis: 3 labels
+  const yLabels = [yMin, (yMin + yMax) / 2, yMax].map(v => ({ v, y: yOf(v) }));
+  // X-axis: every 6h
+  const xLabels: { label: string; x: number }[] = [];
+  candles.forEach((c, i) => {
+    const h = new Date(c.ts).getUTCHours();
+    if (h % 6 === 0) xLabels.push({ label: `${String(h).padStart(2, "0")}:00`, x: xOf(i) });
+  });
+  // Current price line
+  const curY = yOf(closes[closes.length - 1]!);
+  const curPrice = closes[closes.length - 1]!;
+
+  // Decision markers — match to nearest candle by timestamp
+  const markers: { x: number; y: number; action: string }[] = [];
+  decisions.forEach(d => {
+    const ts = new Date(d.createdAt).getTime();
+    let best = 0; let bestDiff = Infinity;
+    candles.forEach((c, i) => { const diff = Math.abs(c.ts - ts); if (diff < bestDiff) { bestDiff = diff; best = i; } });
+    if (bestDiff < 4 * 3600 * 1000) {
+      markers.push({ x: xOf(best), y: yOf(candles[best]!.close), action: d.action });
+    }
+  });
+
+  const fmtPr = (v: number) => v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" style={{ overflow: "visible" }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={strokeColor} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={strokeColor} stopOpacity="0.01" />
+        </linearGradient>
+        <clipPath id="chart-clip"><rect x={PAD.l} y={PAD.t} width={cW} height={cH} /></clipPath>
+      </defs>
+
+      {/* Grid lines */}
+      {yLabels.map(({ y }, i) => (
+        <line key={i} x1={PAD.l} y1={y} x2={PAD.l + cW} y2={y} stroke="#1f1f2e" strokeWidth="1" />
+      ))}
+
+      {/* Area fill */}
+      <path d={areaPath} fill={`url(#${gradId})`} clipPath="url(#chart-clip)" />
+
+      {/* Price line */}
+      <polyline points={linePts} fill="none" stroke={strokeColor} strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#chart-clip)" />
+
+      {/* Current price dashed line */}
+      <line x1={PAD.l} y1={curY} x2={PAD.l + cW} y2={curY} stroke={strokeColor} strokeWidth="0.75" strokeDasharray="3,3" opacity="0.6" />
+      <rect x={PAD.l + cW + 2} y={curY - 8} width={W - PAD.l - cW - 4} height={16} rx="3" fill={strokeColor} opacity="0.15" />
+      <text x={PAD.l + cW + 5} y={curY + 4} fill={strokeColor} fontSize="8.5" fontFamily="'JetBrains Mono', monospace">{fmtPr(curPrice)}</text>
+
+      {/* Y labels */}
+      {yLabels.map(({ v, y }, i) => (
+        <text key={i} x={PAD.l - 5} y={y + 3} fill="#4b5563" fontSize="8" textAnchor="end" fontFamily="'JetBrains Mono', monospace">{fmtPr(v)}</text>
+      ))}
+
+      {/* X labels */}
+      {xLabels.map(({ label, x }, i) => (
+        <text key={i} x={x} y={H - 6} fill="#374151" fontSize="8" textAnchor="middle" fontFamily="'JetBrains Mono', monospace">{label}</text>
+      ))}
+
+      {/* Decision markers */}
+      {markers.map((m, i) => {
+        const col = m.action === "BUY" ? "#22c55e" : m.action === "SELL" ? "#ef4444" : "#6b7280";
+        return (
+          <g key={i}>
+            <line x1={m.x} y1={PAD.t} x2={m.x} y2={PAD.t + cH} stroke={col} strokeWidth="0.75" strokeDasharray="2,2" opacity="0.5" />
+            <circle cx={m.x} cy={m.y} r="3.5" fill={col} opacity="0.9" />
+            <text x={m.x} y={m.y - 6} fill={col} fontSize="7" textAnchor="middle" fontFamily="'Space Grotesk', sans-serif" fontWeight="700">{m.action}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 const API_BASE = "/api";
 
 type Regime = "TRENDING" | "RANGING" | "VOLATILE" | "CRISIS";
@@ -163,6 +262,7 @@ export default function Dashboard() {
 
   const [state, setState]           = useState<AgentState | null>(null);
   const [decisions, setDecisions]   = useState<Decision[]>([]);
+  const [candles, setCandles]       = useState<Candle[]>([]);
   const [pairs, setPairs]           = useState<PairInfo[]>([]);
   const [pairOpen, setPairOpen]     = useState(false);
   const [switching, setSwitching]   = useState(false);
@@ -173,6 +273,7 @@ export default function Dashboard() {
   const pairWrapRef = useRef<HTMLDivElement>(null);
   // Track active pair in a ref so fetchData (memoized) always reads the latest value
   const activePairRef = useRef("BTCUSDT");
+  const switchingRef  = useRef(false); // guard: don't let state response override ref mid-switch
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -186,15 +287,25 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async () => {
     try {
+      // Fetch state first so we know the server's active pair before fetching candles
+      const stateRes = await fetch(`${API_BASE}/state`);
+      if (stateRes.ok) {
+        const s = await stateRes.json() as AgentState;
+        setState(s);
+        // Sync ref with server's persisted pair — but not while user is mid-switch
+        if (!switchingRef.current && s.currentPair && s.currentPair !== activePairRef.current) {
+          activePairRef.current = s.currentPair;
+        }
+      }
       const pair = activePairRef.current;
-      const [stateRes, decisionsRes, pairsRes] = await Promise.all([
-        fetch(`${API_BASE}/state`),
+      const [decisionsRes, pairsRes, candlesRes] = await Promise.all([
         fetch(`${API_BASE}/decisions?limit=10&pair=${pair}`),
         fetch(`${API_BASE}/pairs`),
+        fetch(`${API_BASE}/candles?pair=${pair}&limit=24`),
       ]);
-      if (stateRes.ok)     setState(await stateRes.json());
       if (decisionsRes.ok) setDecisions(await decisionsRes.json());
       if (pairsRes.ok)     setPairs(await pairsRes.json());
+      if (candlesRes.ok)   setCandles(await candlesRes.json());
       setLastRefresh(new Date());
     } catch (_) { /* retry next tick */ }
   }, []);
@@ -207,6 +318,7 @@ export default function Dashboard() {
 
   const switchPair = async (symbol: string) => {
     activePairRef.current = symbol;  // update immediately so next fetch filters correctly
+    switchingRef.current  = true;    // guard against state response overriding the ref
     setSwitching(true); setPairOpen(false); setPendingPair(symbol);
     setDecisions([]);  // clear trail instantly so old pair's decisions don't linger
     try {
@@ -221,7 +333,7 @@ export default function Dashboard() {
         setTimeout(() => void fetchData(), delay);
       }
     } finally {
-      setTimeout(() => { setSwitching(false); setPendingPair(null); }, 30000);
+      setTimeout(() => { switchingRef.current = false; setSwitching(false); setPendingPair(null); }, 30000);
     }
   };
 
@@ -426,6 +538,26 @@ export default function Dashboard() {
           </div>
           <div className="text-xs text-gray-300" style={fontSpace}>{signals.priceStructure ?? "Consolidating"}</div>
           <div className="mt-3 text-[10px] text-gray-600" style={fontMono}>{fmtPrice(signals.price)}</div>
+        </div>
+      </section>
+
+      {/* ── PRICE CHART ── */}
+      <section className="z-10 bg-[#0D0D16] border border-gray-800/50 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[10px] text-gray-500 flex items-center gap-2 tracking-widest" style={fontSpace}>
+              <TrendingUp size={12} /> 24H PRICE  · {pairLabel}
+            </h2>
+            <span className={`text-[9px] font-medium ml-1 ${priceUp ? "text-emerald-400" : "text-red-400"}`} style={fontMono}>{fmtChange(priceChange)}</span>
+          </div>
+          <div className="flex items-center gap-3 text-[9px] text-gray-700" style={fontSpace}>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />BUY</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />SELL</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gray-600 inline-block" />HOLD</span>
+          </div>
+        </div>
+        <div className="h-[130px] w-full">
+          <PriceChart candles={candles} decisions={decisions} pair={currentPair} />
         </div>
       </section>
 
