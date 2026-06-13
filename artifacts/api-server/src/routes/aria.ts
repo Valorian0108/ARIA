@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, decisionsTable, agentStateTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { runAgentCycle, setActivePair } from "../agent/loop";
+import { fetchQuickPrice } from "../lib/bitget";
 
 const router: IRouter = Router();
 
@@ -18,7 +19,7 @@ router.get("/pairs", (_req, res): void => {
   res.json(AVAILABLE_PAIRS);
 });
 
-// POST /api/pair — switch the active pair
+// POST /api/pair — switch the active pair, immediately patch price in state
 router.post("/pair", async (req, res): Promise<void> => {
   const { pair } = req.body as { pair?: string };
   const valid = AVAILABLE_PAIRS.find((p) => p.symbol === pair);
@@ -27,8 +28,19 @@ router.post("/pair", async (req, res): Promise<void> => {
     return;
   }
   await setActivePair(valid.symbol);
+
+  // Immediately fetch ticker so price updates within ~1s (before Qwen cycle finishes)
+  const quick = await fetchQuickPrice(valid.symbol);
+  if (quick.price > 0) {
+    const [current] = await db.select().from(agentStateTable).where(eq(agentStateTable.id, 1)).limit(1);
+    if (current) {
+      const patched = { ...(current.signals as Record<string, unknown>), price: quick.price, priceChange24h: quick.priceChange24h };
+      await db.update(agentStateTable).set({ currentPair: valid.symbol, signals: patched }).where(eq(agentStateTable.id, 1));
+    }
+  }
+
   void runAgentCycle();
-  res.json({ pair: valid.symbol, label: valid.label, queued: true });
+  res.json({ pair: valid.symbol, label: valid.label, price: quick.price, queued: true });
 });
 
 // GET /api/state — full agent state

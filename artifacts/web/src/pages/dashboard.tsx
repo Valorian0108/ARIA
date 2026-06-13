@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Activity, BarChart2, TrendingUp, Zap, RefreshCw, Shield, Target, AlertTriangle, ChevronDown, Info } from "lucide-react";
 
 const API_BASE = "/api";
@@ -146,8 +146,11 @@ export default function Dashboard() {
   const [pairs, setPairs]           = useState<PairInfo[]>([]);
   const [pairOpen, setPairOpen]     = useState(false);
   const [switching, setSwitching]   = useState(false);
+  const [pendingPair, setPendingPair] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; right: number } | null>(null);
+  const pairBtnRef = useRef<HTMLButtonElement>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -170,12 +173,23 @@ export default function Dashboard() {
   }, [fetchData]);
 
   const switchPair = async (symbol: string) => {
-    setSwitching(true); setPairOpen(false);
+    setSwitching(true); setPairOpen(false); setPendingPair(symbol);
     try {
-      await fetch(`${API_BASE}/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pair: symbol }) });
-      setTimeout(() => void fetchData(), 3000);
-      setTimeout(() => void fetchData(), 9000);
-    } finally { setTimeout(() => setSwitching(false), 9000); }
+      const res = await fetch(`${API_BASE}/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pair: symbol }) });
+      if (res.ok) {
+        const data = await res.json() as { price?: number };
+        // Optimistically patch the price from the quick-fetch response
+        if (data.price && data.price > 0) {
+          setState((s) => s ? { ...s, currentPair: symbol, signals: { ...s.signals, price: data.price } } : s);
+        }
+      }
+      // Poll at 2s, 6s, 15s, 30s to catch the Qwen cycle completing
+      for (const delay of [2000, 6000, 15000, 30000]) {
+        setTimeout(() => void fetchData(), delay);
+      }
+    } finally {
+      setTimeout(() => { setSwitching(false); setPendingPair(null); }, 30000);
+    }
   };
 
   const handleTrigger = async () => {
@@ -190,7 +204,7 @@ export default function Dashboard() {
   const regime       = state?.regime ?? "RANGING";
   const regimeStyle  = REGIME_STYLES[regime];
   const signals      = state?.signals ?? {};
-  const currentPair  = state?.currentPair ?? "BTCUSDT";
+  const currentPair  = pendingPair ?? state?.currentPair ?? "BTCUSDT";
   const pairLabel    = pairs.find((p) => p.symbol === currentPair)?.label ?? currentPair.replace("USDT", "/USDT");
 
   const priceChange  = signals.priceChange24h;
@@ -233,10 +247,15 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Pair selector dropdown */}
+          {/* Pair selector dropdown — fixed position to escape overflow-hidden */}
           <div className="relative">
             <button
-              onClick={() => setPairOpen((o) => !o)}
+              ref={pairBtnRef}
+              onClick={() => {
+                const rect = pairBtnRef.current?.getBoundingClientRect();
+                if (rect) setDropdownRect({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                setPairOpen((o) => !o);
+              }}
               className="flex items-center gap-2 px-3 py-1.5 text-xs bg-[#0D0D18] border border-gray-700/60 rounded-lg text-gray-300 hover:border-violet-600/50 transition-all"
               style={fontMono}
             >
@@ -244,22 +263,32 @@ export default function Dashboard() {
               {switching ? "SWITCHING…" : pairLabel}
               <ChevronDown size={12} className={`transition-transform duration-200 ${pairOpen ? "rotate-180" : ""}`} />
             </button>
-            {pairOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-[#0E0E1A] border border-gray-700/60 rounded-xl overflow-hidden z-50 shadow-2xl">
+          </div>
+          {pairOpen && dropdownRect && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setPairOpen(false)} />
+              <div
+                className="fixed z-50 w-48 bg-[#0E0E1A] border border-gray-700/60 rounded-xl overflow-hidden shadow-2xl"
+                style={{ top: dropdownRect.top, right: dropdownRect.right }}
+              >
                 {pairs.map((p) => (
                   <button
                     key={p.symbol}
                     onClick={() => void switchPair(p.symbol)}
-                    className={`w-full px-4 py-2.5 text-left text-xs flex items-center justify-between hover:bg-violet-900/20 transition-colors ${p.symbol === currentPair ? "text-violet-300 bg-violet-900/10" : "text-gray-400"}`}
+                    className={`w-full px-4 py-3 text-left text-xs flex items-center justify-between transition-colors active:bg-violet-900/30 ${
+                      p.symbol === currentPair
+                        ? "text-violet-300 bg-violet-900/10"
+                        : "text-gray-400 hover:bg-violet-900/20 hover:text-gray-200"
+                    }`}
                     style={fontMono}
                   >
-                    <span className="font-medium">{p.label}</span>
+                    <span className="font-semibold">{p.label}</span>
                     <span className="text-[10px] text-gray-600">{p.name}</span>
                   </button>
                 ))}
               </div>
-            )}
-          </div>
+            </>
+          )}
 
           <button onClick={() => void handleTrigger()} disabled={triggering}
             className="flex items-center gap-2 px-3 py-1.5 text-xs bg-violet-900/30 border border-violet-700/40 rounded-lg text-violet-300 hover:bg-violet-900/50 transition-all disabled:opacity-50"

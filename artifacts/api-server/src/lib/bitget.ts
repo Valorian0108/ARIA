@@ -56,6 +56,19 @@ function stddev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+export async function fetchQuickPrice(pair = "BTCUSDT"): Promise<{ price: number; priceChange24h: number }> {
+  try {
+    const raw = await fetchJson(`${BITGET_BASE}/api/v2/spot/market/tickers?symbol=${pair}`) as { data?: { lastPr?: string; change24h?: string }[] };
+    const t = raw.data?.[0];
+    return {
+      price: parseFloat(t?.lastPr ?? "0"),
+      priceChange24h: parseFloat(t?.change24h ?? "0") * 100,
+    };
+  } catch {
+    return { price: 0, priceChange24h: 0 };
+  }
+}
+
 export async function fetchSignals(pair = "BTCUSDT"): Promise<SignalData> {
   try {
     const [candleRes, tickerRes, fundingRes] = await Promise.allSettled([
