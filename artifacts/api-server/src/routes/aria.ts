@@ -89,8 +89,9 @@ router.get("/decisions", async (req, res): Promise<void> => {
   const limit = Math.min(Number(req.query["limit"] ?? 20), 50);
   const pairFilter = req.query["pair"] as string | undefined;
   const query = db.select().from(decisionsTable).orderBy(desc(decisionsTable.createdAt));
-  const decisions = pairFilter
-    ? await query.where(eq(decisionsTable.pair, pairFilter)).limit(limit)
+  const normalizedPair = pairFilter?.replace(/USDT$/, "/USDT");
+  const decisions = normalizedPair
+    ? await query.where(eq(decisionsTable.pair, normalizedPair)).limit(limit)
     : await query.limit(limit);
 
   res.json(
