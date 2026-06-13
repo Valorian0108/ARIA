@@ -610,17 +610,7 @@ export default function Dashboard() {
             <Tooltip text="Simulated P&L tracking — not real money. Updates each time ARIA makes a BUY or SELL decision. HOLD decisions don't affect the P&L. The equity curve below shows cumulative returns over time." />
           </div>
 
-          {!hasTradeHistory ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center py-4">
-              <div className="w-10 h-10 rounded-full bg-gray-800/50 border border-gray-700 flex items-center justify-center mb-3">
-                <BarChart2 size={16} className="text-gray-600" />
-              </div>
-              <p className="text-xs text-gray-600 leading-relaxed max-w-[180px]" style={fontSpace}>
-                Performance builds up once ARIA makes BUY or SELL decisions. HOLD decisions don't count.
-              </p>
-            </div>
-          ) : (
-            <>
+          <>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <div className="text-[10px] text-gray-600 mb-1 tracking-wider" style={fontSpace}>SIM PnL</div>
@@ -650,7 +640,6 @@ export default function Dashboard() {
                 <PnlChart decisions={decisions} />
               </div>
             </>
-          )}
 
           <div className="flex flex-col gap-2 mt-auto" style={fontSpace}>
             {[
