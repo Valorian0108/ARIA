@@ -9,9 +9,6 @@ const router: IRouter = Router();
 const AVAILABLE_PAIRS = [
   { symbol: "BTCUSDT", label: "BTC/USDT", name: "Bitcoin" },
   { symbol: "ETHUSDT", label: "ETH/USDT", name: "Ethereum" },
-  { symbol: "SOLUSDT", label: "SOL/USDT", name: "Solana" },
-  { symbol: "BNBUSDT", label: "BNB/USDT", name: "BNB" },
-  { symbol: "XRPUSDT", label: "XRP/USDT", name: "Ripple" },
 ];
 
 // GET /api/pairs — list tradeable pairs
@@ -87,14 +84,14 @@ router.get("/state", async (req, res): Promise<void> => {
   });
 });
 
-// GET /api/decisions — last N decisions
+// GET /api/decisions — last N decisions, optionally filtered by pair
 router.get("/decisions", async (req, res): Promise<void> => {
   const limit = Math.min(Number(req.query["limit"] ?? 20), 50);
-  const decisions = await db
-    .select()
-    .from(decisionsTable)
-    .orderBy(desc(decisionsTable.createdAt))
-    .limit(limit);
+  const pairFilter = req.query["pair"] as string | undefined;
+  const query = db.select().from(decisionsTable).orderBy(desc(decisionsTable.createdAt));
+  const decisions = pairFilter
+    ? await query.where(eq(decisionsTable.pair, pairFilter)).limit(limit)
+    : await query.limit(limit);
 
   res.json(
     decisions.map((d) => ({

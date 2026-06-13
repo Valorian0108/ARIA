@@ -171,6 +171,8 @@ export default function Dashboard() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const pairWrapRef = useRef<HTMLDivElement>(null);
+  // Track active pair in a ref so fetchData (memoized) always reads the latest value
+  const activePairRef = useRef("BTCUSDT");
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -184,9 +186,10 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async () => {
     try {
+      const pair = activePairRef.current;
       const [stateRes, decisionsRes, pairsRes] = await Promise.all([
         fetch(`${API_BASE}/state`),
-        fetch(`${API_BASE}/decisions?limit=10`),
+        fetch(`${API_BASE}/decisions?limit=10&pair=${pair}`),
         fetch(`${API_BASE}/pairs`),
       ]);
       if (stateRes.ok)     setState(await stateRes.json());
@@ -203,17 +206,17 @@ export default function Dashboard() {
   }, [fetchData]);
 
   const switchPair = async (symbol: string) => {
+    activePairRef.current = symbol;  // update immediately so next fetch filters correctly
     setSwitching(true); setPairOpen(false); setPendingPair(symbol);
+    setDecisions([]);  // clear trail instantly so old pair's decisions don't linger
     try {
       const res = await fetch(`${API_BASE}/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pair: symbol }) });
       if (res.ok) {
         const data = await res.json() as { price?: number };
-        // Optimistically patch the price from the quick-fetch response
         if (data.price && data.price > 0) {
           setState((s) => s ? { ...s, currentPair: symbol, signals: { ...s.signals, price: data.price } } : s);
         }
       }
-      // Poll at 2s, 6s, 15s, 30s to catch the Qwen cycle completing
       for (const delay of [2000, 6000, 15000, 30000]) {
         setTimeout(() => void fetchData(), delay);
       }
@@ -355,17 +358,17 @@ export default function Dashboard() {
 
       {/* ── SIGNAL GRID ── */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3 z-10">
-        {/* On-chain flow */}
+        {/* Exchange Flow */}
         <div className="bg-[#0D0D16] border border-gray-800/50 p-4 rounded-xl group relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-violet-900/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="flex justify-between items-start mb-1">
-            <div className="flex items-center">
-              <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>EXCHANGE FLOW</h3>
-              <Tooltip text="Measures how much BTC is moving onto or off exchanges. Outflows (↑σ) = people withdrawing to wallets = bullish. Inflows (↓σ) = people depositing to sell = bearish." />
-            </div>
+            <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>EXCHANGE FLOW</h3>
             <span className={`text-[9px] font-medium ${flowColor}`}>{flowSigma > 0 ? "▲" : flowSigma < 0 ? "▼" : "—"}</span>
           </div>
-          <div className="text-[9px] text-gray-600 mb-2" style={fontSpace}>{flowLabel}</div>
+          <div className="text-[9px] text-gray-600 mb-1" style={fontSpace}>{flowLabel}</div>
+          <div className="text-[9px] text-gray-700 mb-2 leading-tight" style={fontSpace}>
+            {flowSigma > 1.5 ? "Outflows: wallets withdrawing → bullish" : flowSigma < -1.5 ? "Inflows: depositing to sell → bearish" : "Net flow within normal range"}
+          </div>
           <div className="text-xs text-gray-300 truncate" style={fontMono}>{signals.exchangeFlow ?? "—"}</div>
           <div className="mt-3 h-5 w-full">
             <MiniChart color={flowSigma >= 0 ? "#22c55e" : "#ef4444"} data={[0.2,0.4,0.3,0.6,0.5,0.8,0.7,1.0]} />
@@ -376,14 +379,14 @@ export default function Dashboard() {
         <div className="bg-[#0D0D16] border border-gray-800/50 p-4 rounded-xl group relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-violet-900/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="flex justify-between items-start mb-1">
-            <div className="flex items-center">
-              <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>SENTIMENT</h3>
-              <Tooltip text="Blended score 0–1 based on price momentum and funding rate. Above 0.6 = greedy/bullish. Below 0.4 = fearful/bearish. Extremes signal potential reversals." />
-            </div>
+            <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>SENTIMENT</h3>
             <span className={`text-[9px] font-medium ${sentimentColor}`}>{sentimentLabel}</span>
           </div>
-          <div className="text-[9px] text-gray-600 mb-2" style={fontSpace}>
+          <div className="text-[9px] text-gray-600 mb-1" style={fontSpace}>
             {sentimentPct > 60 ? "Market is greedy — caution" : sentimentPct < 40 ? "Market is fearful — opportunity" : "Balanced momentum"}
+          </div>
+          <div className="text-[9px] text-gray-700 mb-2 leading-tight" style={fontSpace}>
+            Score 0–1: &gt;0.6 bullish · &lt;0.4 bearish
           </div>
           <div className="text-sm text-white" style={fontMono}>{fmt(sentimentVal, 2)} <span className="text-xs text-gray-700">/ 1.0</span></div>
           <div className="mt-3 h-1 w-full bg-gray-800 rounded-full overflow-hidden">
@@ -391,35 +394,35 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Funding rate */}
+        {/* Funding Rate */}
         <div className="bg-[#0D0D16] border border-gray-800/50 p-4 rounded-xl group relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-violet-900/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="flex justify-between items-start mb-1">
-            <div className="flex items-center">
-              <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>FUNDING RATE</h3>
-              <Tooltip text="Paid every 8h between long and short traders on perpetual futures. Positive = longs paying shorts (crowded longs, bearish signal). Negative = shorts paying longs (crowded shorts, bullish signal)." />
-            </div>
+            <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>FUNDING RATE</h3>
             <span className={`text-[9px] font-medium ${fundingColor}`}>{fundingNum >= 0 ? "+" : ""}{fmt(fundingNum, 4)}%</span>
           </div>
-          <div className="text-[9px] text-gray-600 mb-2" style={fontSpace}>{fundingLabel}</div>
+          <div className="text-[9px] text-gray-600 mb-1" style={fontSpace}>{fundingLabel}</div>
+          <div className="text-[9px] text-gray-700 mb-2 leading-tight" style={fontSpace}>
+            {fundingNum > 0.01 ? "Longs paying shorts — crowded long, bearish" : fundingNum < -0.01 ? "Shorts paying longs — crowded short, bullish" : "Balanced futures positioning"}
+          </div>
           <div className="text-sm text-white" style={fontMono}>/8h rate</div>
           <div className="mt-3 h-5 w-full">
             <MiniChart color="#6b7280" data={[0.5,0.52,0.48,0.5,0.53,0.5,0.49,0.51]} />
           </div>
         </div>
 
-        {/* Price structure */}
+        {/* Price Structure */}
         <div className="bg-[#0D0D16] border border-gray-800/50 p-4 rounded-xl group relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-violet-900/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="flex justify-between items-start mb-1">
-            <div className="flex items-center">
-              <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>PRICE STRUCTURE</h3>
-              <Tooltip text="Detects whether price is making higher highs (uptrend) or lower lows (downtrend) over the last 6 hourly candles. Compression squeeze = a breakout is building." />
-            </div>
+            <h3 className="text-[10px] text-gray-500 tracking-wider" style={fontSpace}>PRICE STRUCTURE</h3>
             <span className={`text-[9px] font-medium ${priceUp ? "text-emerald-400" : "text-red-400"}`}>{fmtChange(priceChange)}</span>
           </div>
-          <div className="text-[9px] text-gray-600 mb-2" style={fontSpace}>
+          <div className="text-[9px] text-gray-600 mb-1" style={fontSpace}>
             {signals.macdSignal ?? "—"} MACD · {signals.whaleActivity ?? "Normal"} whales
+          </div>
+          <div className="text-[9px] text-gray-700 mb-2 leading-tight" style={fontSpace}>
+            Higher highs = uptrend · lower lows = downtrend
           </div>
           <div className="text-xs text-gray-300" style={fontSpace}>{signals.priceStructure ?? "Consolidating"}</div>
           <div className="mt-3 text-[10px] text-gray-600" style={fontMono}>{fmtPrice(signals.price)}</div>
