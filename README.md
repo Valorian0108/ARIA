@@ -1,6 +1,6 @@
-# ARIA — Adaptive Regime Intelligence Agent
+# ARIA - Adaptive Regime Intelligence Agent
 
-> An autonomous AI agent that reads live crypto market conditions, classifies the current regime, and makes reasoned BUY / SELL / HOLD decisions — with a full explanation of its thinking.
+> An autonomous AI agent that reads live crypto market conditions, classifies the current regime, and makes reasoned BUY / SELL / HOLD decisions - with a full explanation of its thinking.
 
 🌐 **Live Demo:** [aria-7syb.onrender.com](https://aria-7syb.onrender.com)
 
@@ -11,11 +11,11 @@
 Most crypto dashboards show you data. ARIA *reasons* about it.
 
 Every 45 seconds, ARIA:
-1. Pulls live BTC/USDT market signals — price, funding rate, sentiment score, whale activity, exchange flows, MACD
+1. Pulls live BTC/USDT market signals - price, funding rate, sentiment score, whale activity, exchange flows, MACD
 2. Classifies the current **market regime** (Trending Up / Trending Down / Ranging / Volatile) using Qwen AI
 3. Makes a simulated **trading decision** (BUY / SELL / HOLD) with a confidence score and full written reasoning
 4. Updates the **Sim Performance** panel — tracking P&L, Win Rate, Sharpe Ratio, and Max Drawdown in real time
-5. Logs every decision to the **Reasoning Trail** — a live audit log of ARIA's thought process
+5. Logs every decision to the **Reasoning Trail** - a live audit log of ARIA's thought process
 
 ---
 
